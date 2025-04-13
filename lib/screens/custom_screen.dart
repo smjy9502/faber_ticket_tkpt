@@ -110,7 +110,7 @@ class _CustomScreenState extends State<CustomScreen> {
 
               // 메인 콘텐츠 (스크롤 가능)
               Positioned.fill(
-                top: 300,  // 기존 70 → 300 (상단 여백 증가)
+                top: 800,  // 기존 70 → 300 > 800 (상단 여백 증가)
                 bottom: 40, // 기존 70 → 40 (하단 여백 감소)
                 child: SingleChildScrollView(
                   physics: BouncingScrollPhysics(),
