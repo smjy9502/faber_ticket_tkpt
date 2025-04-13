@@ -110,8 +110,8 @@ class _CustomScreenState extends State<CustomScreen> {
 
               // 메인 콘텐츠 (스크롤 가능)
               Positioned.fill(
-                top: 70,
-                bottom: 70,
+                top: 100,  // 기존 70 → 100 (상단 여백 증가)
+                bottom: 40, // 기존 70 → 40 (하단 여백 감소)
                 child: SingleChildScrollView(
                   physics: BouncingScrollPhysics(),
                   child: Column(
@@ -123,7 +123,7 @@ class _CustomScreenState extends State<CustomScreen> {
 
                       // 리뷰 입력
                       _buildReviewField(),
-                      SizedBox(height: 40),
+                      SizedBox(height: 30),
 
                       // 좌석 정보 입력
                       _buildSeatInfoSection(),
@@ -135,14 +135,15 @@ class _CustomScreenState extends State<CustomScreen> {
               // 하단 Photos 버튼 (고정 위치)
               Positioned(
                 bottom: 20,
-                left: MediaQuery.of(context).size.width * 0.5 - 75,
+                left: MediaQuery.of(context).size.width * 0.5 - 60, // 너비 조정
                 child: ElevatedButton(
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => PhotoScreen()),
                   ),
                   style: ElevatedButton.styleFrom(
-                    minimumSize: Size(150, 50),
+                    minimumSize: Size(120, 40), // 기존 150x50 → 120x40
+                    padding: EdgeInsets.symmetric(horizontal: 20),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(25),
                     ),
@@ -178,19 +179,22 @@ class _CustomScreenState extends State<CustomScreen> {
 
   Widget _buildReviewField() {
     return Container(
-      width: MediaQuery.of(context).size.width * 0.8,
+      width: MediaQuery.of(context).size.width * 0.7, // 기존 0.8 → 0.7
       padding: EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(15),
       ),
       child: TextField(
         controller: reviewController,
         style: TextStyle(color: Colors.white),
-        maxLines: 3,
+        maxLines: 1, // 기존 3 → 1
         decoration: InputDecoration(
           hintText: "Write your review...",
-          hintStyle: TextStyle(color: Colors.white70),
+          hintStyle: TextStyle(
+            color: Colors.white70,
+            fontSize: 14, // 폰트 크기 축소
+          ),
           border: InputBorder.none,
         ),
       ),
@@ -216,7 +220,7 @@ class _CustomScreenState extends State<CustomScreen> {
       width: 80,
       height: 60,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(10),
       ),
       child: TextField(
