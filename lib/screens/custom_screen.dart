@@ -96,7 +96,7 @@ class _CustomScreenState extends State<CustomScreen> {
 
               // 저장 버튼
               Positioned(
-                top: 10,
+                top: 11, // 10>11
                 right: 10,
                 child: FloatingActionButton(
                   onPressed: saveData,
@@ -110,7 +110,7 @@ class _CustomScreenState extends State<CustomScreen> {
 
               // 메인 콘텐츠 (스크롤 가능)
               Positioned.fill(
-                top: 100,  // 기존 70 → 100 (상단 여백 증가)
+                top: 300,  // 기존 70 → 300 (상단 여백 증가)
                 bottom: 40, // 기존 70 → 40 (하단 여백 감소)
                 child: SingleChildScrollView(
                   physics: BouncingScrollPhysics(),
@@ -134,15 +134,15 @@ class _CustomScreenState extends State<CustomScreen> {
 
               // 하단 Photos 버튼 (고정 위치)
               Positioned(
-                bottom: 20,
-                left: MediaQuery.of(context).size.width * 0.5 - 60, // 너비 조정
+                bottom: 10,
+                left: MediaQuery.of(context).size.width * 0.5 - 30, // 너비 조정
                 child: ElevatedButton(
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => PhotoScreen()),
                   ),
                   style: ElevatedButton.styleFrom(
-                    minimumSize: Size(120, 40), // 기존 150x50 → 120x40
+                    minimumSize: Size(80, 30), // 기존 150x50 → 120x40
                     padding: EdgeInsets.symmetric(horizontal: 20),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(25),
