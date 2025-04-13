@@ -15,6 +15,11 @@ class CustomScreen extends StatefulWidget {
 class _CustomScreenState extends State<CustomScreen> {
   final FirebaseService _firebaseService = FirebaseService();
   ImageProvider? _ticketBackground;
+  int _rating = 0;
+  final TextEditingController reviewController = TextEditingController();
+  final TextEditingController sectionController = TextEditingController();
+  final TextEditingController rowController = TextEditingController();
+  final TextEditingController seatController = TextEditingController();
 
   @override
   void initState() {
@@ -22,7 +27,6 @@ class _CustomScreenState extends State<CustomScreen> {
     _loadBackgroundImage();
   }
 
-  // 수정된 _loadBackgroundImage()
   Future<void> _loadBackgroundImage() async {
     try {
       final urlParams = Uri.base.queryParameters;
@@ -33,7 +37,6 @@ class _CustomScreenState extends State<CustomScreen> {
         final url = await ref.getDownloadURL();
         setState(() => _ticketBackground = NetworkImage(url));
       } else {
-        // 파라미터 없을 때 기본 이미지 적용
         setState(() => _ticketBackground = AssetImage(Constants.ticketBackImage));
       }
     } catch (e) {
@@ -41,15 +44,6 @@ class _CustomScreenState extends State<CustomScreen> {
       setState(() => _ticketBackground = AssetImage(Constants.ticketBackImage));
     }
   }
-
-
-
-
-  int _rating = 0; // 평점
-  final TextEditingController reviewController = TextEditingController();
-  final TextEditingController sectionController = TextEditingController();
-  final TextEditingController rowController = TextEditingController();
-  final TextEditingController seatController = TextEditingController();
 
   Future<void> saveData() async {
     try {
@@ -73,8 +67,6 @@ class _CustomScreenState extends State<CustomScreen> {
     }
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -87,109 +79,63 @@ class _CustomScreenState extends State<CustomScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              // 상단 버튼 그룹 (기존 위치 유지)
-              Stack(
-                children: [
-                  Positioned(
-                    top: 5,
-                    left: 20,
-                    child: IconButton(
-                      icon: Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => MainScreen()),
-                      ),
-                    ),
+              // 상단 버튼
+              Positioned(
+                top: 10,
+                left: 10,
+                child: IconButton(
+                  icon: Icon(Icons.arrow_back, color: Colors.white, size: 30),
+                  onPressed: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => MainScreen()),
                   ),
-                  Positioned(
-                    top: 17,
-                    right: 29,
-                    child: FloatingActionButton(
-                      onPressed: saveData,
-                      backgroundColor: Colors.deepPurpleAccent,
-                      foregroundColor: Colors.white,
-                      elevation: 6,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        alignment: Alignment.center,
-                        child: Icon(Icons.save_rounded, size: 28),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
 
-              // 메인 콘텐츠 영역 (기존 위치 유지)
-              Expanded(
+              // 저장 버튼
+              Positioned(
+                top: 10,
+                right: 10,
+                child: FloatingActionButton(
+                  onPressed: saveData,
+                  backgroundColor: Colors.deepPurpleAccent,
+                  foregroundColor: Colors.white,
+                  elevation: 6,
+                  mini: true,
+                  child: Icon(Icons.save_rounded),
+                ),
+              ),
+
+              // 메인 콘텐츠 (스크롤 가능)
+              Positioned.fill(
+                top: 70,
+                bottom: 70,
                 child: SingleChildScrollView(
-                  child: Stack(
+                  physics: BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // 평점 입력
-                      Positioned(
-                        top: MediaQuery.of(context).size.height * 0.6,
-                        left: MediaQuery.of(context).size.width * 0.5 - 90,
-                        child: Row(
-                          children: List.generate(5, (index) {
-                            return GestureDetector(
-                              onTap: () => setState(() => _rating = index + 1),
-                              child: Image.asset(
-                                index < _rating
-                                    ? Constants.petalFullImage
-                                    : Constants.petalEmptyImage,
-                                width: 40,
-                                height: 40,
-                              ),
-                            );
-                          }),
-                        ),
-                      ),
+                      _buildRatingSection(),
+                      SizedBox(height: 30),
 
                       // 리뷰 입력
-                      Positioned(
-                        top: MediaQuery.of(context).size.height * 0.71,
-                        left: MediaQuery.of(context).size.width * 0.5 - 90,
-                        child: SizedBox(
-                          width: 300,
-                          child: TextField(
-                            controller: reviewController,
-                            style: TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              hintText: "Write your review",
-                              hintStyle: TextStyle(color: Colors.white70),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                      ),
+                      _buildReviewField(),
+                      SizedBox(height: 40),
 
                       // 좌석 정보 입력
-                      Positioned(
-                        top: MediaQuery.of(context).size.height * 0.82,
-                        left: MediaQuery.of(context).size.width * 0.1,
-                        right: MediaQuery.of(context).size.width * 0.1,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildSeatInput(sectionController, "Section"),
-                            _buildSeatInput(rowController, "Row"),
-                            _buildSeatInput(seatController, "Seat"),
-                          ],
-                        ),
-                      ),
+                      _buildSeatInfoSection(),
                     ],
                   ),
                 ),
               ),
 
-              // 하단 Photos 버튼 (추가)
-              Padding(
-                padding: EdgeInsets.only(bottom: 30),
+              // 하단 Photos 버튼 (고정 위치)
+              Positioned(
+                bottom: 20,
+                left: MediaQuery.of(context).size.width * 0.5 - 75,
                 child: ElevatedButton(
                   onPressed: () => Navigator.push(
                     context,
@@ -212,7 +158,59 @@ class _CustomScreenState extends State<CustomScreen> {
     );
   }
 
-// 좌석 입력 필드 위젯 (기존 유지)
+  Widget _buildRatingSection() {
+    return Wrap(
+      spacing: 10,
+      children: List.generate(5, (index) {
+        return GestureDetector(
+          onTap: () => setState(() => _rating = index + 1),
+          child: Image.asset(
+            index < _rating
+                ? Constants.petalFullImage
+                : Constants.petalEmptyImage,
+            width: 40,
+            height: 40,
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildReviewField() {
+    return Container(
+      width: MediaQuery.of(context).size.width * 0.8,
+      padding: EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: TextField(
+        controller: reviewController,
+        style: TextStyle(color: Colors.white),
+        maxLines: 3,
+        decoration: InputDecoration(
+          hintText: "Write your review...",
+          hintStyle: TextStyle(color: Colors.white70),
+          border: InputBorder.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeatInfoSection() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 40),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _buildSeatInput(sectionController, "Section"),
+          _buildSeatInput(rowController, "Row"),
+          _buildSeatInput(seatController, "Seat"),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSeatInput(TextEditingController controller, String hint) {
     return Container(
       width: 80,
