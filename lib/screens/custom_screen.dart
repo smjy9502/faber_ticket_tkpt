@@ -1,13 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:faber_ticket_tkpt/screens/photo_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:faber_ticket_tkpt/services/firebase_service.dart';
 import 'package:faber_ticket_tkpt/screens/main_screen.dart';
 import 'package:faber_ticket_tkpt/utils/constants.dart';
-import 'dart:html' as html; // For url cleansing
-
+import 'dart:ui';
+import 'dart:html' as html;
+import 'error_screen.dart';
 
 class CustomScreen extends StatefulWidget {
   @override
@@ -18,11 +19,18 @@ class _CustomScreenState extends State<CustomScreen> {
   final FirebaseService _firebaseService = FirebaseService();
   ImageProvider? _ticketBackground;
 
+  int _rating = 0;
+  final TextEditingController reviewController = TextEditingController();
+  final TextEditingController sectionController = TextEditingController();
+  final TextEditingController rowController = TextEditingController();
+  final TextEditingController seatController = TextEditingController();
+
+  double blurSigma = 12.0; // 줄이면 선명해진다.
+
   @override
   void initState() {
     super.initState();
-    _loadBackgroundImage().then((_){
-      // 매개변수 읽은 후 URL에서 제거
+    _loadBackgroundImage().then((_) {
       html.window.history.replaceState({}, '', '/custom');
     });
     _loadSavedData();
@@ -30,27 +38,30 @@ class _CustomScreenState extends State<CustomScreen> {
 
   Future<void> _loadBackgroundImage() async {
     try {
-      // final urlParams = Uri.base.queryParameters;
-      // final ticketBackground = urlParams['ct'];
-      // sessionStorage에서 매개변수 읽기
       final storedParams = html.window.sessionStorage['params'];
       final urlParams = storedParams != null
           ? Uri(query: storedParams).queryParameters
           : Uri.base.queryParameters;
-
       final ticketBackground = urlParams['ct'];
-      //이 위까지 수정
-
-      if (ticketBackground != null) {
-        final ref = FirebaseStorage.instance.ref("images/$ticketBackground");
-        final url = await ref.getDownloadURL();
-        setState(() => _ticketBackground = NetworkImage(url));
-      } else {
-        throw Exception('Custom Image 파라미터 없음');
+      if (ticketBackground == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => ErrorScreen()),
+          );
+        });
+        return;
       }
+      final ref = FirebaseStorage.instance.ref("images/$ticketBackground");
+      final url = await ref.getDownloadURL();
+      setState(() => _ticketBackground = NetworkImage(url));
     } catch (e) {
-      print("배경 이미지 로드 실패: $e");
-      setState(() => _ticketBackground = AssetImage(Constants.ticketBackImage));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => ErrorScreen()),
+        );
+      });
     }
   }
 
@@ -63,7 +74,7 @@ class _CustomScreenState extends State<CustomScreen> {
           .collection('users')
           .doc(user.uid)
           .collection('reviews')
-          .doc('current') // ✅ 고정 문서 ID 사용
+          .doc('current')
           .get();
 
       if (doc.exists) {
@@ -80,20 +91,11 @@ class _CustomScreenState extends State<CustomScreen> {
     }
   }
 
-
-
-  int _rating = 0; // 평점
-  final TextEditingController reviewController = TextEditingController();
-  final TextEditingController sectionController = TextEditingController();
-  final TextEditingController rowController = TextEditingController();
-  final TextEditingController seatController = TextEditingController();
-
   Future<void> saveData() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not logged in');
 
-      // 기존 데이터와 비교
       final currentData = {
         'rating': _rating,
         'review': reviewController.text,
@@ -108,13 +110,13 @@ class _CustomScreenState extends State<CustomScreen> {
           .doc('current')
           .get();
 
-      // 데이터 변경 시에만 저장
-      if (!prevDoc.exists || prevDoc.data()!.toString() != currentData.toString()) {
+      if (!prevDoc.exists ||
+          prevDoc.data()!.toString() != currentData.toString()) {
         await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .collection('reviews')
-            .doc('current') // ✅ 동일 문서 수정
+            .doc('current')
             .set(currentData, SetOptions(merge: true));
       }
     } catch (e) {
@@ -122,182 +124,377 @@ class _CustomScreenState extends State<CustomScreen> {
     }
   }
 
+  // 입력 다이얼로그 (텍스트, 중앙 정렬, 최대 2줄 제한, 팝업 밖 터치 닫힘)
+  Future<void> _showInputDialog({
+    required String label,
+    required TextEditingController controller,
+    int? maxLines,
+    TextInputType? keyboardType,
+    String? hint,
+    VoidCallback? onConfirm,
+  }) async {
+    final tempController = TextEditingController(text: controller.text);
 
+    // 최대 2줄 제한 (review)
+    List<TextInputFormatter> formatters = [];
+    if (label.contains("리뷰") || label.toLowerCase().contains("review")) {
+      formatters = [
+        LengthLimitingTextInputFormatter(90),
+        _MaxLinesEnforcer(2),
+      ];
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: _ticketBackground!,
-            fit: BoxFit.cover,
-            alignment: Alignment.topCenter, // 배경 이미지를 화면 상단에 맞춤
-          ),
-        ),
-        child: SafeArea(
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withOpacity(0.25),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Material(
+          color: Colors.transparent,
           child: Stack(
             children: [
-              // Back 버튼 (화면 좌측 상단)
-              Positioned(
-                top: 5, // 화면 최상단에 위치하도록 조정
-                left: 20,
-                child: IconButton(
-                  icon: Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => MainScreen()),
-                    );
-                  },
-                ),
+              BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                child: Container(),
               ),
-              // Save 버튼 (화면 우측 상단)
-              Positioned(
-                top: 11, // 10>11
-                right: 10,
-                child: FloatingActionButton(
-                  onPressed: saveData,
-                  backgroundColor: Colors.purple.shade100,
-                  foregroundColor: Colors.white,
-                  elevation: 6,
-                  mini: true,
-                  child: Icon(Icons.save_rounded),
-                ),
-              ),
-              // Rate (평점 기능)
-              Positioned(
-                top: MediaQuery.of(context).size.height * 0.6, // 이미지 위치를 아래로 이동(숫자 크게하면 아래로)
-                left: MediaQuery.of(context).size.width * 0.5 - 90, // 이미지 위치 조정(- 뒤 숫자 줄이면 우측으로)
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly, // 이미지 간격 조정
-                  children: List.generate(5, (index) {
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          if (index < _rating) {
-                            _rating = index + 1;
-                          } else if (index == _rating) {
-                            _rating = index;
-                          } else {
-                            _rating = index + 1;
-                          }
-                        });
-                      },
-                      child: Image.asset(
-                        index < _rating ? Constants.petalFullImage : Constants.petalEmptyImage,
-                        width: 40, // 이미지 크기 조정
-                        height: 40,
-                      ),
-                    );
-                  }).map((child) => [child, SizedBox(width: 10)]).expand((pair) => pair).toList(),
-                ),
-              ),
-              // Review 입력
-              Positioned(
-                top: MediaQuery.of(context).size.height * 0.71, // 이미지 상의 "Review" 위치
-                left: MediaQuery.of(context).size.width * 0.5 - 90,
-                child: SizedBox(
-                  width: 300,
-                  child: TextField(
-                    controller: reviewController,
-                    maxLines: 1,
-                    style: TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: "Write your review",
-                      hintStyle: TextStyle(color: Colors.white),
-                      border: InputBorder.none, // 밑줄 제거
-                    ),
+              Center(
+                child: Container(
+                  width: 320,
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                ),
-              ),
-              // Section, Row, Seat 입력
-              Positioned(
-                top: MediaQuery.of(context).size.height * 0.82, // 이미지 상의 "Section", "Row", "Seat" 위치
-                left: MediaQuery.of(context).size.width * 0.1,
-                right: MediaQuery.of(context).size.width * 0.1,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.only(left: 4.9),
-                      child: SizedBox(
-                        width: MediaQuery.of(context).size.width * 0.16,
-                        child: TextField(
-                          textAlign: TextAlign.center, // 텍스트 중간 정렬
-                          controller: sectionController,
-                          style: TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            hintText: "Section",
-                            hintStyle: TextStyle(color: Colors.grey),
-                            border: InputBorder.none, // 밑줄 제거
-                          ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 20,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                    ),
-                    // SizedBox(width: 20,),
-                    SizedBox(
-                      width: MediaQuery.of(context).size.width * 0.16,
-                      child: TextField(
-                        textAlign: TextAlign.center, // 텍스트 중간 정렬
-                        controller: rowController,
-                        style: TextStyle(color: Colors.white),
+                      SizedBox(height: 18),
+                      TextField(
+                        controller: tempController,
+                        maxLines: maxLines ?? 1,
+                        keyboardType: keyboardType,
+                        autofocus: true,
+                        textAlign: TextAlign.center,
+                        textAlignVertical: TextAlignVertical.center,
+                        style: TextStyle(color: Colors.white, fontSize: 18, height: 1.2),
                         decoration: InputDecoration(
-                          hintText: "Row",
-                          hintStyle: TextStyle(color: Colors.grey),
-                          border: InputBorder.none, // 밑줄 제거
+                          hintText: hint ?? '',
+                          hintStyle: TextStyle(color: Colors.white60),
+                          border: InputBorder.none,
+                          filled: false,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
                         ),
+                        cursorColor: Colors.white,
+                        inputFormatters: formatters,
                       ),
-                    ),
-                    // SizedBox(width: 20,),
-                    Padding(
-                      padding: EdgeInsets.only(right: 4.9),
-                      child: SizedBox(
-                        width: MediaQuery.of(context).size.width * 0.16,
-                        child: TextField(
-                          textAlign: TextAlign.center, // 텍스트 중간 정렬
-                          controller: seatController,
-                          style: TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            hintText: "Seat",
-                            hintStyle: TextStyle(color: Colors.grey),
-                            border: InputBorder.none, // 밑줄 제거
-                          ),
-                        ),
+                      SizedBox(height: 24),
+                      IconButton(
+                        icon: Icon(Icons.check_circle_rounded, color: Colors.deepPurpleAccent, size: 40),
+                        onPressed: () {
+                          controller.text = tempController.text;
+                          Navigator.of(context).pop();
+                          if (onConfirm != null) onConfirm();
+                        },
+                        tooltip: "확인",
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              // Photo/Setlist 버튼
-              Positioned(
-                bottom: MediaQuery.of(context).size.height * 0.01,
-                left: MediaQuery.of(context).size.width * 0.5 - 40, // 중앙 정렬 보정
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ElevatedButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => PhotoScreen()),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: Size(80, 30),
-                        padding: EdgeInsets.symmetric(horizontal: 25),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                        backgroundColor: Colors.purple.shade100,
-                      ),
-                      child: Text('Photos'),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-        ),
+        );
+      },
+    );
+  }
+
+  // 평점(꽃잎) 입력 다이얼로그 (팝업 밖 터치 닫힘, 선택 즉시 반영)
+  Future<void> _showRatingDialog() async {
+    int tempRating = _rating;
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withOpacity(0.25),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return Material(
+              color: Colors.transparent,
+              child: Stack(
+                children: [
+                  BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                    child: Container(),
+                  ),
+                  Center(
+                    child: Container(
+                      width: 320,
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.07),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'My Score',
+                            style: TextStyle(fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: 18),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(5, (index) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setStateDialog(() {
+                                    tempRating = index + 1;
+                                  });
+                                },
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 4),
+                                  child: Image.asset(
+                                    index < tempRating
+                                        ? Constants.petalFullImage
+                                        : Constants.petalEmptyImage,
+                                    width: 32,
+                                    height: 32,
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                          SizedBox(height: 24),
+                          IconButton(
+                            icon: Icon(Icons.check_circle_rounded, color: Colors.deepPurpleAccent, size: 40),
+                            onPressed: () {
+                              setState(() => _rating = tempRating);
+                              Navigator.of(context).pop();
+                            },
+                            tooltip: "확인",
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        children: [
+          if (_ticketBackground != null)
+            Positioned.fill(
+              child: Image(
+                image: _ticketBackground!,
+                fit: BoxFit.fill,
+                // alignment: Alignment.topCenter,
+              ),
+            ),
+          // Back 버튼
+          Positioned(
+            top: 5,
+            left: 20,
+            child: IconButton(
+              icon: Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => MainScreen()),
+                );
+              },
+            ),
+          ),
+          // Save 버튼
+          Positioned(
+            top: 11,
+            right: 10,
+            child: FloatingActionButton(
+              onPressed: saveData,
+              backgroundColor: Colors.grey.shade500,
+              foregroundColor: Colors.white,
+              elevation: 6,
+              mini: true,
+              child: Icon(Icons.save_rounded),
+            ),
+          ),
+          // Rate (평점) - 팝업 호출, 위치 위로
+          Positioned(
+            top: MediaQuery.of(context).size.height * 0.58,
+            left: MediaQuery.of(context).size.width * 0.5 - 90,
+            child: GestureDetector(
+              onTap: _showRatingDialog,
+              child: Container(
+                width: 240,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(5, (index) {
+                    return Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 5),
+                      child: Image.asset(
+                        index < _rating
+                            ? Constants.petalFullImage
+                            : Constants.petalEmptyImage,
+                        width: 40,
+                        height: 40,
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ),
+          // Review 위치 아래로 (0.675)
+          Positioned(
+            top: MediaQuery.of(context).size.height * 0.675,
+            left: MediaQuery.of(context).size.width * 0.5 - 90,
+            child: GestureDetector(
+              onTap: () => _showInputDialog(
+                label: "My Review",
+                controller: reviewController,
+                maxLines: 2,
+                hint: "Write your review",
+              ),
+              child: Container(
+                width: 200,
+                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  reviewController.text.isEmpty ? "Write your review" : reviewController.text,
+                  style: TextStyle(
+                    color: reviewController.text.isEmpty ? Colors.white60 : Colors.white,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Section, Row, Seat 위치 양쪽으로
+          Positioned(
+            top: MediaQuery.of(context).size.height * 0.812,
+            left: MediaQuery.of(context).size.width * 0.12,
+            right: MediaQuery.of(context).size.width * 0.12,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Section
+                GestureDetector(
+                  onTap: () => _showInputDialog(
+                    label: "My Section",
+                    controller: sectionController,
+                    hint: "Section",
+                  ),
+                  child: Container(
+                    width: MediaQuery.of(context).size.width * 0.16,
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      sectionController.text.isEmpty ? "Section" : sectionController.text,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: sectionController.text.isEmpty ? Colors.white60 : Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                // Row
+                GestureDetector(
+                  onTap: () => _showInputDialog(
+                    label: "My Row",
+                    controller: rowController,
+                    hint: "Row",
+                  ),
+                  child: Container(
+                    width: MediaQuery.of(context).size.width * 0.16,
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      rowController.text.isEmpty ? "Row" : rowController.text,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: rowController.text.isEmpty ? Colors.white60 : Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                // Seat
+                GestureDetector(
+                  onTap: () => _showInputDialog(
+                    label: "My Seat",
+                    controller: seatController,
+                    hint: "Seat",
+                  ),
+                  child: Container(
+                    width: MediaQuery.of(context).size.width * 0.16,
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      seatController.text.isEmpty ? "Seat" : seatController.text,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: seatController.text.isEmpty ? Colors.white60 : Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
+  }
+}
+
+// 2줄 이상 입력 제한을 위한 커스텀 input formatter
+class _MaxLinesEnforcer extends TextInputFormatter {
+  final int maxLines;
+  _MaxLinesEnforcer(this.maxLines);
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final lines = '\n'.allMatches(newValue.text).length + 1;
+    if (lines > maxLines) {
+      return oldValue;
+    }
+    return newValue;
   }
 }
